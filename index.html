@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Management System</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1, h2 { color: #0056b3; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        form div { margin-bottom: 10px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="number"], select {
+            width: calc(100% - 22px);
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover { background-color: #0056b3; }
+        .db-toggle { margin-bottom: 20px; padding: 15px; background-color: #e9ecef; border-radius: 5px; display: flex; align-items: center; justify-content: space-between; }
+        #currentDbStatus { font-weight: bold; color: #28a745; }
+        #booksList { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }
+        .book-item {
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .book-info { flex-grow: 1; }
+        .book-actions button {
+            padding: 6px 10px;
+            font-size: 14px;
+            background-color: #ffc107; /* Edit */
+            color: #333;
+            margin-left: 5px;
+        }
+        .book-actions button.delete {
+            background-color: #dc3545; /* Delete */
+            color: white;
+        }
+        .book-actions button:hover { opacity: 0.9; }
+        #searchForm { margin-bottom: 20px; display: flex; }
+        #searchForm input { flex-grow: 1; margin-right: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Book Management System</h1>
+
+        <div class="db-toggle">
+            <div>
+                <label for="dbSelect">Select Database:</label>
+                <select id="dbSelect">
+                    <option value="local">Local (Compass)</option>
+                    <option value="cloud">Cloud (Atlas)</option>
+                </select>
+                <button onclick="changeDatabase()">Switch DB</button>
+            </div>
+            <p>Currently Connected to: <span id="currentDbStatus">Loading...</span></p>
+        </div>
+
+        <h2>Add New Book</h2>
+        <form id="addBookForm">
+            <div>
+                <label for="title">Title:</label>
+                <input type="text" id="title" required>
+            </div>
+            <div>
+                <label for="author">Author:</label>
+                <input type="text" id="author" required>
+            </div>
+            <div>
+                <label for="year">Year:</label>
+                <input type="number" id="year">
+            </div>
+            <div>
+                <label for="genre">Genre:</label>
+                <input type="text" id="genre">
+            </div>
+            <button type="submit">Add Book</button>
+        </form>
+
+        <h2>Search Books</h2>
+        <form id="searchForm">
+            <input type="text" id="searchQuery" placeholder="Search by title or author...">
+            <button type="submit">Search</button>
+            <button type="button" onclick="fetchBooks()">Clear Search</button>
+        </form>
+
+        <h2>Book List</h2>
+        <div id="booksList">
+            Loading books...
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:3000'; // Your server's endpoint
+
+        // Fetches and displays all books
+        async function fetchBooks(query = '') {
+            try {
+                let url = `${API_BASE_URL}/books`;
+                if (query) {
+                    // Corrected: Removed LaTeX math delimiters
+                    url = `${API_BASE_URL}/books/search?query=${encodeURIComponent(query)}`;
+                }
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+                const books = await response.json();
+                const booksListDiv = document.getElementById('booksList');
+                booksListDiv.innerHTML = ''; // Clear existing list
+
+                if (books.length === 0) {
+                    booksListDiv.innerHTML = '<p>No books found.</p>';
+                    return;
+                }
+
+                books.forEach(book => {
+                    const bookItem = document.createElement('div');
+                    bookItem.className = 'book-item';
+                    bookItem.innerHTML = `
+                        <div class="book-info">
+                            <strong>${book.title}</strong> by ${book.author} (${book.year || 'Unknown Year'}) - ${book.genre || 'Unknown Genre'}
+                        </div>
+                        <div class="book-actions">
+                            <button onclick="editBookPrompt('${book._id}', '${book.title}', '${book.author}', ${book.year || 'null'}, '${book.genre || ''}')">Edit</button>
+                            <button class="delete" onclick="deleteBook('${book._id}', '${book.title}')">Delete</button>
+                        </div>
+                    `;
+                    booksListDiv.appendChild(bookItem);
+                });
+            } catch (error) {
+                console.error('Error fetching books:', error);
+                document.getElementById('booksList').innerHTML = `<p style="color: red;">Error loading books: ${error.message}. Make sure the server is running and connected to the correct database.</p>`;
+            }
+        }
+
+        // Adds a new book
+        async function addBook(event) {
+            event.preventDefault(); // Prevent page refresh
+
+            const title = document.getElementById('title').value;
+            const author = document.getElementById('author').value;
+            const year = document.getElementById('year').value;
+            const genre = document.getElementById('genre').value;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/books`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ title, author, year: year ? parseInt(year) : undefined, genre }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error: ${response.status}`);
+                }
+
+                const newBook = await response.json();
+                alert(`Book "${newBook.title}" added successfully!`);
+                document.getElementById('addBookForm').reset(); // Clear the form
+                fetchBooks(); // Refresh the book list
+            } catch (error) {
+                console.error('Error adding book:', error);
+                alert(`Error adding book: ${error.message}`);
+            }
+        }
+
+        // Prompts for editing a book
+        function editBookPrompt(id, currentTitle, currentAuthor, currentYear, currentGenre) {
+            const newTitle = prompt("Enter new title:", currentTitle);
+            if (newTitle === null) return; // User cancelled
+
+            const newAuthor = prompt("Enter new author:", currentAuthor);
+            if (newAuthor === null) return;
+
+            const newYear = prompt("Enter new year:", currentYear === null ? '' : currentYear);
+            if (newYear === null) return;
+
+            const newGenre = prompt("Enter new genre:", currentGenre);
+            if (newGenre === null) return;
+
+            const updatedBook = {
+                title: newTitle,
+                author: newAuthor,
+                year: newYear ? parseInt(newYear) : undefined,
+                genre: newGenre
+            };
+            updateBook(id, updatedBook);
+        }
+
+        // Sends update request to the server
+        async function updateBook(id, bookData) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/books/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(bookData),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error: ${response.status}`);
+                }
+
+                const updatedBook = await response.json();
+                alert(`Book "${updatedBook.title}" updated successfully!`);
+                fetchBooks(); // Refresh list
+            } catch (error) {
+                console.error('Error updating book:', error);
+                alert(`Error updating book: ${error.message}`);
+            }
+        }
+
+        // Deletes a book
+        async function deleteBook(id, title) {
+            if (!confirm(`Are you sure you want to delete "${title}"?`)) {
+                return; // User cancelled
+            }
+            try {
+                const response = await fetch(`${API_BASE_URL}/books/${id}`, {
+                    method: 'DELETE',
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error: ${response.status}`);
+                }
+
+                alert(`Book "${title}" deleted successfully!`);
+                fetchBooks(); // Refresh list
+            } catch (error) {
+                console.error('Error deleting book:', error);
+                alert(`Error deleting book: ${error.message}`);
+            }
+        }
+
+        // Switches database type (local/cloud)
+        async function changeDatabase() {
+            const selectedDb = document.getElementById('dbSelect').value;
+            try {
+                const response = await fetch(`${API_BASE_URL}/switch-db`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ dbType: selectedDb }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                document.getElementById('currentDbStatus').textContent = data.currentDb === 'local' ? 'Local' : 'Cloud';
+                alert(data.message);
+                fetchBooks(); // Reload books from the new database
+            } catch (error) {
+                console.error('Error changing database:', error);
+                document.getElementById('currentDbStatus').textContent = 'Error!';
+                alert(`Error changing database: ${error.message}. Check server console.`);
+            }
+        }
+
+        // Checks and displays current database status on page load
+        async function checkCurrentDbStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/current-db-status`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+                const data = await response.json();
+                document.getElementById('currentDbStatus').textContent = data.currentDb === 'local' ? 'Local' : 'Cloud';
+                document.getElementById('dbSelect').value = data.currentDb; // Set dropdown to current DB
+            } catch (error) {
+                console.error('Error getting current DB status:', error);
+                document.getElementById('currentDbStatus').textContent = 'Unknown (Server Error)';
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            checkCurrentDbStatus(); // Check DB status when page loads
+            fetchBooks(); // Fetch books when page loads
+        });
+        document.getElementById('addBookForm').addEventListener('submit', addBook);
+        document.getElementById('searchForm').addEventListener('submit', (event) => {
+            event.preventDefault();
+            const query = document.getElementById('searchQuery').value;
+            fetchBooks(query);
+        });
+    </script>
+</body>
+</html>
